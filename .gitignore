@@ -1,0 +1,4 @@
+mangas/*
+*.pyc
+*.swp
+__pycache__
