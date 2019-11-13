@@ -1,5 +1,6 @@
 __author__ = ('Imam Omar Mochtar', 'iomarmochtar@gmail.com')
 
+
 import re
 import os
 import ssl
@@ -19,6 +20,7 @@ ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
 
+
 class MangaDownloader(object):
     
     base_url = 'https://www.komikgue.com/manga'
@@ -33,8 +35,12 @@ class MangaDownloader(object):
     end = None
     is_latest = False
     base_dir = None
+    args = None
 
-    def __init__(self, manga, chapter_begin=None, 
+    def __init__(self):
+        self.process()
+
+    def __init__d(self, manga, chapter_begin=None, 
             chapter_end=None, destination=None, is_latest=False):
         self.manga = manga
         self.begin = chapter_begin
@@ -109,8 +115,13 @@ class MangaDownloader(object):
 
         regex = r'{}\/(\d+)[\'"]'.format(self.manga)
         chapters = re.findall(regex, text)
-        leading_zero_re = re.compile('^0+')
+        leading_zero_re = re.compile(r'^0+')
+        all_zero_re = re.compile(r'^0+$')
         def clean(num):
+            # if all number is leading zero
+            if all_zero_re.search(num):
+                return (0, num)
+
             cleaned = leading_zero_re.sub('', num) 
             return (int(cleaned), num)
 
@@ -121,6 +132,12 @@ class MangaDownloader(object):
     def log_err(self, txt, err_code=1):
         print('[Error] {}'.format(txt))
         sys.exit(err_code)
+
+    def download_image_adapter(self, urls, img_container):
+        
+        for image_url in urls:
+            img_container.append( self.download(image_url) )
+            self.log('Download progress {}/{}'.format(len(img_container), len(urls)))
 
     def download_chapter(self, chapter):
         self.process_chapter = str(chapter)
@@ -154,9 +171,10 @@ class MangaDownloader(object):
        
         os.chdir(manga_dir)
         images = []
-        for image_url in image_urls:
-            images.append( self.download(image_url) )
-            self.log('Download progress {}/{}'.format(len(images), len(image_urls)))
+        self.download_image_adapter(urls=image_urls, img_container=images)
+        #for image_url in image_urls:
+        #    images.append( self.download(image_url) )
+        #    self.log('Download progress {}/{}'.format(len(images), len(image_urls)))
 
         zipf = zipfile.ZipFile(archive_file, 'w')
         for image in images:
@@ -166,7 +184,72 @@ class MangaDownloader(object):
         os.chdir(self.base_dir)
         self.log('Selesai => {}'.format(archive_path))
 
+    def cmd_parser(self):
+        parser = ArgumentParser(description='Manga terjemahan indonesia downloader')
+        parser.add_argument('-m', '--manga', help='Nama manga', action='store', required=True)
+        parser.add_argument('-c', '--chapter', help='Chapter yang akan di download', action='store')
+        parser.add_argument('-y', '--yes', 
+                help='Otomatis memilih yes/y jika ada konfirmasi', action='store_true', default=False)
+        parser.add_argument('-l', '--latest', 
+                help='Akan mengunduh chapter terbaru saja', action='store_true', default=False)
+        parser.add_argument('-d', '--destination', 
+                help='Destinasi folder', action='store')
+        return parser
+
+    def process(self):
+        parser = self.cmd_parser()
+        self.args = parser.parse_args()
+        chapter_begin = self.args.chapter 
+        chapter_end = None 
+        manga = self.args.manga
+        separator = ':'
+        is_latest = self.args.latest 
+
+        if is_latest and self.args.chapter:
+            self.log_err('Tidak bisa digabungkan dengan antara download chapter dengan spesifik chapter')
+
+        # jika set chapter dengan range 
+        if chapter_begin and not chapter_begin.isdigit():
+            if chapter_begin.find(separator) == -1:
+                self.log_err('Gunakan {} sebagai separator'.format(separator))
+
+            breaks = chapter_begin.split(separator)
+            if len(breaks) != 2:
+                self.log_err('Hanya gunakan satu separator untuk pemisah')
+
+            chapter_begin, chapter_end = [ int(x) for x in breaks ]
+            if chapter_begin > chapter_end:
+                self.log_err('Chapter awal lebih besar !!!')
+        elif chapter_begin:
+            chapter_begin = int(chapter_begin)
+
+        if not chapter_begin and not chapter_end and not self.args.yes and not is_latest:
+            while True:
+                prompt = raw_input('Anda akan menunduh semua chapter untuk manga {} ? (y/n)'.format(self.args.manga))
+                prompt_l = prompt.lower()
+                if prompt_l == 'y':
+                    break
+                elif prompt_l == 'n':
+                    sys.exit(0)
+                else:
+                    print('Opsi tidak dikenali => {}'.format(prompt))
+
+        self.manga = manga 
+        self.begin = chapter_begin
+        self.end = chapter_end
+        self.is_latest = is_latest
+
+        self.base_dir = os.path.join(
+                os.getcwd() if not self.args.destination else self.args.destination,
+                self.root_folder 
+                )
+
+    # main coroutine
     def main(self):
+
+        if not os.path.isdir(self.base_dir):
+            os.mkdir(self.base_dir)
+        os.chdir(self.base_dir)
 
         if self.is_latest:
             chapters = self.chapters
@@ -190,51 +273,8 @@ class MangaDownloader(object):
         if os.path.isfile(self.index_name):
             os.remove(self.index_name)
 
+
+### END HERE
+
 if __name__ == '__main__':
-    parser = ArgumentParser(description='Manga terjemahan indonesia downloader')
-    parser.add_argument('-m', '--manga', help='Nama manga', action='store', required=True)
-    parser.add_argument('-c', '--chapter', help='Chapter yang akan di download', action='store')
-    parser.add_argument('-y', '--yes', 
-            help='Otomatis memilih yes/y jika ada konfirmasi', action='store_true', default=False)
-    parser.add_argument('-l', '--latest', 
-            help='Akan mengunduh chapter terbaru saja', action='store_true', default=False)
-    parser.add_argument('-d', '--destination', 
-            help='Destinasi folder', action='store')
-
-    args = parser.parse_args()
-    chapter_begin = args.chapter 
-    chapter_end = None 
-    manga = args.manga
-    separator = ':'
-    is_latest = args.latest 
-
-    if is_latest and args.chapter:
-        MangaDownloader.log_err('Tidak bisa digabungkan dengan antara download chapter dengan spesifik chapter')
-
-    # jika set chapter dengan range 
-    if chapter_begin and not chapter_begin.isdigit():
-        if chapter_begin.find(separator) == -1:
-            MangaDownloader.log_err('Gunakan {} sebagai separator'.format(separator))
-
-        breaks = chapter_begin.split(separator)
-        if len(breaks) != 2:
-            MangaDownloader.log_err('Hanya gunakan satu separator untuk pemisah')
-
-        chapter_begin, chapter_end = [ int(x) for x in breaks ]
-        if chapter_begin > chapter_end:
-            MangaDownloader.log_err('Chapter awal lebih besar !!!')
-    elif chapter_begin:
-        chapter_begin = int(chapter_begin)
-
-    if not chapter_begin and not chapter_end and not args.yes and not is_latest:
-        while True:
-            prompt = raw_input('Anda akan menunduh semua chapter untuk manga {} ? (y/n)'.format(args.manga))
-            prompt_l = prompt.lower()
-            if prompt_l == 'y':
-                break
-            elif prompt_l == 'n':
-                sys.exit(0)
-            else:
-                print('Opsi tidak dikenali => {}'.format(prompt))
-
-    MangaDownloader(manga, chapter_begin, chapter_end, args.destination, is_latest).main()
+    MangaDownloader().main()
